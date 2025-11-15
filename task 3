@@ -1,0 +1,194 @@
+# task3_train_and_evaluate.py
+# Student-style Task 3 script (NO learning curve)
+# Function: neha_train_and_evaluate()
+
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+
+# ---------------------------------------------------
+# Helper: Load merged_df
+# ---------------------------------------------------
+def _load_merged_df():
+    if os.path.exists("merged_df.csv"):
+        print("Loading merged_df.csv ...")
+        return pd.read_csv("merged_df.csv")
+
+    try:
+        import AI_LAB_EXAM
+        if hasattr(AI_LAB_EXAM, "run_all_tasks"):
+            print("Calling AI_LAB_EXAM.run_all_tasks() ...")
+            return AI_LAB_EXAM.run_all_tasks()
+    except:
+        pass
+
+    raise FileNotFoundError(
+        "Could not load merged_df.csv or AI_LAB_EXAM.run_all_tasks()"
+    )
+
+
+# ---------------------------------------------------
+# MAIN FUNCTION (your prefix: neha_)
+# ---------------------------------------------------
+def neha_train_and_evaluate():
+
+    # -------- A. Load & Prepare Data --------
+    df = _load_merged_df()
+    print("\nData loaded. Shape:", df.shape)
+
+    if "Class_Type" not in df.columns:
+        raise KeyError("Expected target column 'Class_Type' not found.")
+
+    # engineered features (if missing)
+    df["diet"] = df["diet"].astype(str).str.lower()
+    df["conservation_status"] = df["conservation_status"].astype(str).str.lower()
+
+    if "is_endangered" not in df.columns:
+        df["is_endangered"] = df["conservation_status"].apply(
+            lambda x: 1 if x in ["vulnerable", "endangered", "critically endangered"] else 0
+        )
+
+    if "diet_complexity" not in df.columns:
+        diet_map = {"carnivore": 3, "omnivore": 2, "herbivore": 1}
+        df["diet_complexity"] = df["diet"].map(diet_map).fillna(0)
+
+    target = "Class_Type"
+    X = df.drop(columns=[target])
+    y = df[target].astype(str)
+
+    # remove non-features if present
+    for col in ["animal_name", "Animal_Names", "name", "id"]:
+        if col in X.columns:
+            X = X.drop(columns=[col])
+
+    # handle missing values
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = [c for c in X.columns if c not in numeric_cols]
+
+    X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].median())
+    X[cat_cols] = X[cat_cols].fillna("unknown")
+
+    # encode categoricals
+    X_encoded = pd.get_dummies(X, columns=cat_cols, drop_first=False)
+
+    engineered_features = [f for f in ["is_endangered", "diet_complexity"] if f in X_encoded.columns]
+
+    # split 75/25
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_encoded, y, test_size=0.25, random_state=123, stratify=y
+    )
+
+
+    # -------- B. Train Random Forest --------
+    rf = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=None,
+        min_samples_split=3,
+        random_state=123
+    )
+    rf.fit(X_train, y_train)
+
+
+    # -------- C. Training Performance --------
+    y_train_pred = rf.predict(X_train)
+    y_test_pred = rf.predict(X_test)
+
+    train_accuracy = accuracy_score(y_train, y_train_pred)
+    test_accuracy = accuracy_score(y_test, y_test_pred)
+
+    print(f"\ntraining accuracy:{train_accuracy:.4f}")
+    print(f"testing accuracy:{test_accuracy:.4f}")
+    print(f"overfitting gap:{train_accuracy - test_accuracy:.4f}")
+
+
+    # -------- D. Classification Report --------
+    print("\nClassification Report:")
+    clf_report = classification_report(y_test, y_test_pred)
+    print(clf_report)
+
+    clf_dict = classification_report(y_test, y_test_pred, output_dict=True)
+
+
+    # -------- E. Confusion Matrix Heatmap --------
+    cm = confusion_matrix(y_test, y_test_pred, labels=np.unique(y))
+    plt.figure(figsize=(8,6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=np.unique(y), yticklabels=np.unique(y))
+    plt.title("Confusion Matrix — Random Forest")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.tight_layout()
+    plt.show()
+
+
+    # -------- F. Feature Importance --------
+    feat_imp = pd.Series(rf.feature_importances_, index=X_encoded.columns)
+    top_feats = feat_imp.sort_values(ascending=False).head(12)
+
+    plt.figure(figsize=(8,6))
+    colors = ["tab:orange" if f in engineered_features else "tab:blue" for f in top_feats.index]
+    top_feats[::-1].plot(kind="barh", color=colors)
+    plt.title("Top 12 Feature Importances")
+    plt.xlabel("Importance")
+    plt.tight_layout()
+    plt.show()
+
+
+    # -------- G. Comparison model: KNN (k=5) --------
+    knn = KNeighborsClassifier(n_neighbors=5)
+    knn.fit(X_train, y_train)
+    y_knn_pred = knn.predict(X_test)
+    knn_acc = accuracy_score(y_test, y_knn_pred)
+
+    print(f"\nKNN (k=5) Test Accuracy: {knn_acc:.4f}")
+
+
+    # -------- H. Critical Analysis --------
+    print("\nmodel analysis")
+
+    # top feature
+    top_feature = top_feats.index[0]
+
+    # best & worst class (f1)
+    class_f1 = {cls: clf_dict[cls]["f1-score"]
+                for cls in clf_dict if cls not in ("macro avg", "weighted avg")}
+    worst_class = min(class_f1, key=class_f1.get)
+    best_class = max(class_f1, key=class_f1.get)
+
+    print("most imp feature :", top_feature)
+    print("worst performing class :", worst_class)
+    print("best performing class :", best_class)
+    print("your engineered feature :", engineered_features)
+    print("model comparison :", "Random Forest" if test_accuracy >= knn_acc else "KNN")
+
+
+    #I.attempting bonus question
+    cv_scores = cross_val_score(rf, X_encoded, y, cv=5, scoring="accuracy")
+    print("\nBonus: 5-fold CV accuracy: {:.4f} ± {:.4f}".format(cv_scores.mean(), cv_scores.std()))
+
+   
+if __name__ == "__main__":
+    results = neha_train_and_evaluate()
+    print("\nDone. Summary:", results)
+    print("\nRunning 5-fold cross validation...")
+
+cv_scores = cross_val_score(
+    rf,            # your main RandomForest model
+    X_encoded,     # full feature matrix
+    y,             # full target vector
+    cv=5,          # 5 folds
+    scoring="accuracy"
+)
+
+print("Cross-validation accuracies:", cv_scores)
+print("Mean accuracy:", round(cv_scores.mean(), 4))
+print("Std deviation:", round(cv_scores.std(), 4))
+print("5-fold CV accuracy = {:.4f} ± {:.4f}".format(cv_scores.mean(), cv_scores.std()))

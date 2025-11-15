@@ -1,0 +1,88 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# ==============================================
+# LOAD THE MERGED + CLEANED DATASET
+# (This file must exist from Task 1)
+# ==============================================
+merged_df = pd.read_csv("merged_df.csv")
+
+sns.set(style="whitegrid")
+
+# ==================================================
+# TASK 2A — VISUALIZATIONS
+# ==================================================
+
+# 1. PIE CHART – CLASS DISTRIBUTION
+plt.figure(figsize=(6,6))
+class_counts = merged_df["Class_Type"].value_counts()
+plt.pie(class_counts, labels=class_counts.index, autopct="%1.1f%%", startangle=90)
+plt.title("Class Distribution")
+plt.tight_layout()
+plt.show()
+
+
+# 2. RIDGE-LIKE KDE PLOT – LEGS DISTRIBUTION BY CLASS
+plt.figure(figsize=(10,6))
+for c in merged_df["Class_Type"].unique():
+    sns.kdeplot(
+        merged_df[merged_df["Class_Type"] == c]["legs"],
+        fill=True,
+        alpha=0.4,
+        label=c
+    )
+
+plt.title("Leg Distribution by Class")
+plt.xlabel("Number of Legs")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+# 3. COUNT PLOT – HABITAT TYPE BY DIET
+plt.figure(figsize=(10,6))
+sns.countplot(data=merged_df, x="habitat_type", hue="diet")
+plt.xticks(rotation=45)
+plt.xlabel("Habitat Type")
+plt.ylabel("Count")
+plt.title("Habitat Types by Diet")
+plt.tight_layout()
+plt.show()
+
+
+# 4. CORRELATION HEATMAP
+plt.figure(figsize=(10,6))
+corr = merged_df.corr(numeric_only=True)
+sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f")
+plt.title("Feature Correlation Heatmap")
+plt.tight_layout()
+plt.show()
+
+
+# ==================================================
+# TASK 2B — STATISTICAL ANALYSIS
+# ==================================================
+
+print("\n===== TASK 2B : STATISTICAL ANALYSIS =====")
+
+# 1. CLASS IMBALANCE RATIO
+class_sizes = merged_df["Class_Type"].value_counts()
+imbalance_ratio = class_sizes.max() / class_sizes.min()
+print("\nClass Imbalance Ratio:", round(imbalance_ratio, 3))
+
+
+# 2. LOW VARIANCE FEATURES (< 0.01)
+variances = merged_df.var(numeric_only=True)
+low_variance = variances[variances < 0.01]
+
+print("\nLow Variance Features (variance < 0.01):")
+print(low_variance)
+
+
+# 3. HIGHLY CORRELATED FEATURE PAIRS (|corr| > 0.8)
+print("\nHighly Correlated Feature Pairs (|corr| > 0.8):")
+for i in corr.columns:
+    for j in corr.columns:
+        if i != j and abs(corr.loc[i, j]) > 0.8:
+            print(f"{i} ↔ {j} : {corr.loc[i, j]:.2f}")
